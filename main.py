@@ -8,6 +8,12 @@ from debug_agent.core.dependency_graph import DependencyGraph
 from debug_agent.core.traceback_parser import TracebackParser
 from debug_agent.core.context_builder import ContextBuilder
 
+from debug_agent.tools.runner import run_code
+from debug_agent.tools.linter import lint_code
+from debug_agent.tools.patcher import apply_patch
+
+from debug_agent.validation.fix_validator import validate_fix
+
 def main():
 
     cleanup_old_sandboxes()
@@ -43,13 +49,47 @@ def main():
             graph = DependencyGraph().build(analyzer)
             print(graph.edges())
 
+            # run_code tool call
+            result = run_code("example_project/main.py", sandbox_path)
+            print(result)
+
+            # traceback parser
             parser = TracebackParser()
-            trace_data = parser.parse(traceback)
+            trace_data = parser.parse(result["stderr"])
             print(trace_data)
 
+            # context builder
             context_builder = ContextBuilder(files)
             context = context_builder.build(trace_data)
             print(context)
+            
+            
+            for file in context["relevant_files"]:
+                lint_result = lint_code(file)
+                print(lint_result)
+
+            # apply_path test
+            print("Initial Run:", result)
+
+            old_error = result.get("stderr", "")
+
+            # Apply manual fix (simulate LLM fix)
+            fixed_code = """def printUtils():
+                print("utility code")
+            """
+
+            apply_patch(f"{sandbox_path}/example_project/utils.py",
+                        fixed_code
+            )
+
+            # run again
+            new_result = run_code("example_project/utils.py", sandbox_path)
+            print("After Fix:", new_result)
+
+            # Validate
+            status = validate_fix(old_error, new_result)
+
+            print("Validation:", status)
 
             # run agent here
         finally:
@@ -58,6 +98,7 @@ def main():
         logger.log(message="Sandbox created", sandbox_path=sandbox_path)
 
         print(f"Sandbox Path: {sandbox_path}")
+
 
 if __name__ == "__main__":
     main()
