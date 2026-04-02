@@ -1,0 +1,5 @@
+opentelemetry-api
+opentelemetry-sdk
+rich
+pydantic
+python-dotenv

@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "debug_agent"
+version = "0.1.0"
+description = "ReAct-based code debugging agent"
+authors = [
+    { name = "Ashish Pal", email = "palashish.pal41@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.10"
+
+dependencies = []
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["agent*", "config*", "core*", "observability*", "prompts*", "sandbox*", "tools*", "utils*", "validation*"]
