@@ -3,3 +3,4 @@ opentelemetry-sdk
 rich
 pydantic
 python-dotenv
+networkx
