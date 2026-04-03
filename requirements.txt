@@ -5,3 +5,8 @@ pydantic
 python-dotenv
 networkx
 ruff
+langchain
+langchain-core
+langchain-community
+langchain-ollama
+pydantic
