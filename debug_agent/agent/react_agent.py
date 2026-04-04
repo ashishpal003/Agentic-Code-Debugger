@@ -8,6 +8,11 @@ from debug_agent.validation.fix_validator import validate_fix
 
 from debug_agent.agent.parser import parse_llm_output
 
+#### Changes added before Day 5
+from debug_agent.core.error_classifier import ErrorClassifier
+from debug_agent.utils.dependency_utils import extract_missing_module
+from debug_agent.tools.installer import install_package, PACKAGE_MAPPING
+
 class ReactAgent:
 
     def __init__(self, llm, logger, tracer, metrics):
@@ -61,9 +66,44 @@ class ReactAgent:
 
                 self.metrics.record_iteration()
 
-                # Build prompt
+                ### Build prompt ###
                 prompt = build_prompt(context, previous_attempts, current_error)
 
+                ### error classification before LLM call
+                classifier = ErrorClassifier()
+                error_type = classifier.classify(current_error)
+
+                if error_type == "missing_dependency":
+
+                    missing_pkg = extract_missing_module(current_error)
+
+                    if missing_pkg:
+
+                        install_name = PACKAGE_MAPPING.get(missing_pkg, missing_pkg)
+
+                        self.logger.log(
+                            message="Installing missing dependency",
+                            package=install_name
+                        )
+
+                        install_result = install_package(install_name, sandbox_path)
+
+                        if install_result["success"]:
+                            result = run_code(entry_point, sandbox_path)
+
+                            if result.get("success"):
+                                return {
+                                    "root_cause": f"Missing dependency: {install_name}",
+                                    "action": f"Installed {install_name}",
+                                    "status": "fixed"
+                                }
+                            
+                            current_error = result.get("stderr", "")
+
+                        else:
+                            return {"error": f"Failed to install {install_name}"}
+
+                ##############################
                 response = self.llm.generate(prompt)
 
                 parsed = parse_llm_output(response)

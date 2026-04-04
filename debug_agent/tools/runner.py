@@ -1,14 +1,20 @@
 import subprocess
+import os
 from typing import Dict
 
-def run_code(entry_point: str, cwd: str) -> Dict:
+def run_code(entry_point: str, cwd: str, venv_path=None) -> Dict:
     """
     Run Python code safely inside sandbox
     """
 
     try:
+        python_exec = "python"
+
+        if venv_path:
+            python_exec = os.path.join(venv_path, "bin", "python")
+
         result = subprocess.run(
-            ["python", entry_point],
+            [python_exec, entry_point],
             cwd=cwd,
             capture_output=True,
             text=True,

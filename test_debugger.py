@@ -45,7 +45,7 @@ def run_test():
         # -------------------------------
         entry_point = "main.py"
 
-        initial_result = run_code(entry_point, sandbox_path)
+        initial_result = run_code(entry_point, sandbox_path, sandbox.venv_path)
 
         print("\n=== INITIAL RUN ===")
         print(initial_result)
@@ -62,8 +62,10 @@ def run_test():
 
         parser = TracebackParser()
         traceback_data = parser.parse(initial_error)
+        print("\n=== Traceback ===\n")
+        print(traceback_data)
 
-        context_builder = ContextBuilder(files)
+        context_builder = ContextBuilder(files, logger)
         context = context_builder.build(traceback_data)
 
         print("\n=== CONTEXT BUILT ===")

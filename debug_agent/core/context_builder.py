@@ -2,9 +2,13 @@ import os
 
 class ContextBuilder:
 
-    def __init__(self, files):
+    def __init__(self, files, logger):
         self.files = files
+        self.logger = logger
 
+    def is_valid_project_file(self, file_path):
+        return "site-packages" not in file_path and "venv" not in file_path
+    
     # def get_relevant_files(self, traceback_data):
     #     relevant = []
 
@@ -22,6 +26,9 @@ class ContextBuilder:
             traceback_file = os.path.basename(entry["file"])
 
             for file in self.files:
+                if not self.is_valid_project_file(file):
+                    continue
+
                 if os.path.basename(file) == traceback_file:
                     relevant.append(file)
 
@@ -58,6 +65,20 @@ class ContextBuilder:
                         "line": line,
                         "snippet": snippet
                     }
+
+        self.logger.log(
+            message="Relevant files after filtering",
+            files=relevant_files
+        )
+
+        relevant_files = list(set(relevant_files))
+        relevant_files = sorted(
+            relevant_files,
+            key=lambda f: next(
+                (i for i, t in enumerate(traceback_data) if os.path.basename(f) in t["file"]),
+                999
+            )
+        )
 
         return {
             "relevant_files": relevant_files,

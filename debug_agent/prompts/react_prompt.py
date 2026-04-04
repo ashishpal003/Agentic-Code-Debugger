@@ -12,6 +12,10 @@ RULES:
 - Return FULL corrected file
 - File must exist in provided context
 
+CRITICAL:
+- ONLY modify files present in traceback
+- IGNORE any third-party or site-packages code
+
 ---
 
 ERROR TRACEBACK:

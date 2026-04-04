@@ -12,7 +12,13 @@ class ProjectAnalyzer:
         """
         Recursively index all python files
         """
-        for root, _, files in os.walk(self.root_path):
+        EXCLUDED_DIRS = {"venv", "__pycache__", ".git", "site-packages"}
+
+        for root, dirs, files in os.walk(self.root_path):
+
+            # remove unwanted dirs in-place
+            dirs[:] = [d for d in dirs if d not in EXCLUDED_DIRS]
+
             for file in files:
                 if file.endswith(".py"):
                     full_path = os.path.join(root, file)
