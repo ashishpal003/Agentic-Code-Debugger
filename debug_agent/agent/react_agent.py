@@ -13,6 +13,12 @@ from debug_agent.core.error_classifier import ErrorClassifier
 from debug_agent.utils.dependency_utils import extract_missing_module
 from debug_agent.tools.installer import install_package, PACKAGE_MAPPING
 
+from debug_agent.core.confidence_scorer import ConfidenceScorer
+
+from debug_agent.tools.web_search import search_web
+
+from debug_agent.observability.debug_trace import DebugTrace
+
 class ReactAgent:
 
     def __init__(self, llm, logger, tracer, metrics):
@@ -20,6 +26,7 @@ class ReactAgent:
         self.logger = logger
         self.tracer = tracer
         self.metrics = metrics
+        self.scorer = ConfidenceScorer()
 
     def map_file_to_sandbox(self, file_name, relevant_files):
         """
@@ -59,12 +66,22 @@ class ReactAgent:
         current_error = initial_error
         previous_attempts = []
         seen_errors = []
+        trace = DebugTrace() ## debug trace
+        trace.add("initial_error", current_error) ## debug trace
 
         for iteration in range(5):
 
             with self.tracer.start_span(f"iteration_{iteration}"):
 
                 self.metrics.record_iteration()
+
+                ### Web results
+                if iteration >= 2:
+                    self.logger.log(message="Triggering web search", error=current_error)
+
+                    web_results = search_web(current_error)
+
+                    context["web_results"] = web_results
 
                 ### Build prompt ###
                 prompt = build_prompt(context, previous_attempts, current_error)
@@ -107,6 +124,18 @@ class ReactAgent:
                 response = self.llm.generate(prompt)
 
                 parsed = parse_llm_output(response)
+                trace.add("llm_output", parsed.dict()) ## debug trace
+
+                ## smart retry
+                if parsed.fixed_code in [d["fixed_code"] for d in previous_attempts]:
+                    self.logger.log(message="Skipping repeated fix")
+                    continue
+
+                # previous_attempts.append({
+                #     "iteration": iteration,
+                #     "reason": parsed.reason,
+                #     "status": status
+                # })
 
                 if not parsed:
                     self.logger.log("error", "Invalid LLM output", response=response)
@@ -132,6 +161,8 @@ class ReactAgent:
                 # Run code
                 result = run_code(entry_point, sandbox_path)
 
+                trace.add("execution_result", result) ## debug trace
+
                 status = validate_fix(current_error, result)
 
                 new_error = result.get("stderr", "") or result.get("error", "")
@@ -139,7 +170,8 @@ class ReactAgent:
                 previous_attempts.append({
                     "iteration": iteration,
                     "reason": parsed.reason,
-                    "status": status
+                    "status": status,
+                    "fixed_code": parsed.fixed_code, ## smart retry
                 })
 
                 self.logger.log(
@@ -152,14 +184,20 @@ class ReactAgent:
 
                 relative_path = self.get_relative_path(target_file, sandbox_path)
 
+                # condidence calculation
+                confidence = self.scorer.score(initial_error, result, iteration + 1)
+
                 # Success
                 if status == "success":
                     self.metrics.mark_success()
+
                     return {
                         "root_cause": parsed.reason,
                         "file_to_change": relative_path,
                         "file_name": os.path.basename(target_file),
-                        "fixed_code": parsed.fixed_code 
+                        "fixed_code": parsed.fixed_code,
+                        "confidence": confidence,
+                        "debug_trace": trace.get() ## debug trace
                     }
                 
                 # Early stop: repeated error

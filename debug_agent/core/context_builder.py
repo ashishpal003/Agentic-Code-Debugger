@@ -47,7 +47,12 @@ class ContextBuilder:
         return code_map
     
     def build(self, traceback_data):
+
         relevant_files = self.get_relevant_files(traceback_data)
+
+        ## context optimization
+        MAX_FILES = 5
+        relevant_files = relevant_files[:MAX_FILES]
 
         code_map = self.load_code(relevant_files)
 
@@ -87,6 +92,8 @@ class ContextBuilder:
         }
     
     def extract_snippet(self, file, line, window=3):
+        MAX_LINES = 20 ## context optimization
+
         try:
             with open(file, "r") as f:
                 lines = f.readlines()
@@ -94,6 +101,10 @@ class ContextBuilder:
             start = max(0, line-window-1)
             end = min(len(lines), line+window)
 
-            return "".join(lines[start:end])
+            # return "".join(lines[start:end])
+
+            snippet = lines[start:end] ## context optimization
+            return "".join(snippet[:MAX_LINES]) ## context optimization
+        
         except Exception:
             return ""

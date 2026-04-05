@@ -11,6 +11,8 @@ RULES:
 - Do NOT modify unrelated code
 - Return FULL corrected file
 - File must exist in provided context
+- If web_results are provided, use them to improve your debugging.
+- Focus only on relevant solution
 
 CRITICAL:
 - ONLY modify files present in traceback

@@ -1,6 +1,8 @@
 import os
 import shutil
 
+import networkx as nx
+
 from debug_agent.sandbox.sandbox_manager import SandboxManager
 from debug_agent.sandbox.sandbox_cleanup import cleanup_old_sandboxes
 

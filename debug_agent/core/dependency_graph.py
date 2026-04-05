@@ -25,3 +25,6 @@ class DependencyGraph:
             self.add_file(file, metadata)
 
         return self.graph
+    
+    def write_nx_graph(self):
+        nx.write_adjlist(self.graph, "graph_adj.txt")
