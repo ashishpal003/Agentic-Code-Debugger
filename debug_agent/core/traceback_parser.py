@@ -1,24 +1,18 @@
 import re
+from typing import List, Dict
+
 
 class TracebackParser:
+    """
+    Parse Python traceback to extract file paths and line numbers.
+    """
 
     FILE_LINE_REGEX = r'File "(.+?)", line (\d+)'
 
-    def parse(self, traceback: str):
-        """
-        Extract file paths and line numbers from traceback
-        """
+    def parse(self, traceback: str) -> List[Dict]:
         matches = re.findall(self.FILE_LINE_REGEX, traceback)
 
-        parsed = []
-        for file, line in matches:
-            parsed.append({
-                "file": file,
-                "line": int(line)
-            })
-
-        return parsed
-
-if __name__ == "__main__":
-    traceback = TracebackParser().parse('File "/app/main.py", line 10, in <module>')
-    print(traceback)
+        return [
+            {"file": file, "line": int(line)}
+            for file, line in matches
+        ]

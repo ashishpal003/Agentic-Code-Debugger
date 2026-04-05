@@ -1,9 +1,12 @@
 class ConfidenceScorer:
+    """
+    Computes confidence score for debugging result.
+    """
 
-    def score(self, initial_error, final_result, iterations):
+    def score(self, initial_error: str, final_result: dict, iterations: int) -> float:
         score = 0.0
 
-        # code runs successfully
+        # Successful execution
         if final_result.get("success"):
             score += 0.5
 
@@ -11,7 +14,7 @@ class ConfidenceScorer:
         if initial_error and not final_result.get("stderr"):
             score += 0.3
         
-        # Fewer iterations = better
+        # Efficiency bonus
         if iterations == 1:
             score += 0.2
         elif iterations <= 3:
