@@ -12,6 +12,9 @@ class ProjectAnalyzer:
         """
         Recursively index all python files
         """
+
+        self.files = []
+
         EXCLUDED_DIRS = {"venv", "__pycache__", ".git", "site-packages"}
 
         for root, dirs, files in os.walk(self.root_path):
@@ -24,7 +27,7 @@ class ProjectAnalyzer:
                     full_path = os.path.join(root, file)
                     self.files.append(full_path)
         
-        return self.files
+        return list(set(self.files)) # dedup
     
     def parse_file(self, file_path: str):
         """

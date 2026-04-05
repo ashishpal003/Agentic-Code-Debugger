@@ -84,7 +84,8 @@ def run_test():
             context=context,
             entry_point=entry_point,
             sandbox_path=sandbox_path,
-            initial_error=initial_error
+            initial_error=initial_error,
+            venv_path=sandbox.venv_path
         )
 
         print("\n=== FINAL RESULT ===")

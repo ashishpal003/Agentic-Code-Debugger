@@ -1,7 +1,7 @@
 import os
+import hashlib
 
 from debug_agent.prompts.react_prompt import build_prompt
-
 from debug_agent.tools.runner import run_code
 from debug_agent.tools.patcher import apply_patch
 from debug_agent.validation.fix_validator import validate_fix
@@ -19,6 +19,8 @@ from debug_agent.tools.web_search import search_web
 
 from debug_agent.observability.debug_trace import DebugTrace
 
+from debug_agent.tools.backup_manager import BackupManager
+
 class ReactAgent:
 
     def __init__(self, llm, logger, tracer, metrics):
@@ -27,6 +29,7 @@ class ReactAgent:
         self.tracer = tracer
         self.metrics = metrics
         self.scorer = ConfidenceScorer()
+        self.backup = BackupManager()
 
     def map_file_to_sandbox(self, file_name, relevant_files):
         """
@@ -61,11 +64,11 @@ class ReactAgent:
         except Exception:
             return os.path.basename(full_path)
     
-    def run(self, context, entry_point, sandbox_path, initial_error):
+    def run(self, context, entry_point, sandbox_path, initial_error, venv_path):
 
         current_error = initial_error
         previous_attempts = []
-        seen_errors = []
+        seen_error_hashes = {}
         trace = DebugTrace() ## debug trace
         trace.add("initial_error", current_error) ## debug trace
 
@@ -75,6 +78,39 @@ class ReactAgent:
 
                 self.metrics.record_iteration()
 
+                ### Error Classification
+                classifier = ErrorClassifier()
+                error_type = classifier.classify(current_error)
+
+                ### Tool Action
+                if error_type == "missing_dependency":
+
+                    missing_pkg = extract_missing_module(current_error)
+
+                    if missing_pkg:
+                        install_name = PACKAGE_MAPPING.get(missing_pkg, missing_pkg)
+
+                        self.logger.log(
+                            message="Installing missing dependency",
+                            package=install_name
+                        )
+
+                        result = install_package(install_name, venv_path)
+
+                        if result["success"]:
+                            rerun = run_code(entry_point, sandbox_path, venv_path)
+
+                            if rerun["success"]:
+                                return {
+                                    "root_cause": f"Missing dependency: {install_name}",
+                                    "status": "fixed"
+                                }
+                            
+                            current_error = result.get("stderr", "")
+
+                        else:
+                            return {"error": f"Failed to install {install_name}"}
+                        
                 ### Web results
                 if iteration >= 2:
                     self.logger.log(message="Triggering web search", error=current_error)
@@ -83,62 +119,20 @@ class ReactAgent:
 
                     context["web_results"] = web_results
 
-                ### Build prompt ###
+                ### Build prompt and LLM reasoning
                 prompt = build_prompt(context, previous_attempts, current_error)
 
-                ### error classification before LLM call
-                classifier = ErrorClassifier()
-                error_type = classifier.classify(current_error)
-
-                if error_type == "missing_dependency":
-
-                    missing_pkg = extract_missing_module(current_error)
-
-                    if missing_pkg:
-
-                        install_name = PACKAGE_MAPPING.get(missing_pkg, missing_pkg)
-
-                        self.logger.log(
-                            message="Installing missing dependency",
-                            package=install_name
-                        )
-
-                        install_result = install_package(install_name, sandbox_path)
-
-                        if install_result["success"]:
-                            result = run_code(entry_point, sandbox_path)
-
-                            if result.get("success"):
-                                return {
-                                    "root_cause": f"Missing dependency: {install_name}",
-                                    "action": f"Installed {install_name}",
-                                    "status": "fixed"
-                                }
-                            
-                            current_error = result.get("stderr", "")
-
-                        else:
-                            return {"error": f"Failed to install {install_name}"}
-
-                ##############################
                 response = self.llm.generate(prompt)
-
                 parsed = parse_llm_output(response)
                 trace.add("llm_output", parsed.dict()) ## debug trace
 
-                ## smart retry
-                if parsed.fixed_code in [d["fixed_code"] for d in previous_attempts]:
-                    self.logger.log(message="Skipping repeated fix")
-                    continue
-
-                # previous_attempts.append({
-                #     "iteration": iteration,
-                #     "reason": parsed.reason,
-                #     "status": status
-                # })
-
                 if not parsed:
                     self.logger.log("error", "Invalid LLM output", response=response)
+                    continue
+
+                fix_hash = hashlib.md5(parsed.fixed_code.encode()).hexdigest()
+
+                if any(p["hash"] == fix_hash for p in previous_attempts):
                     continue
 
                 target_file = self.map_file_to_sandbox(
@@ -155,23 +149,27 @@ class ReactAgent:
                     )
                     return {"error": f"File {parsed.file} not found"}
                 
+                ## Backup + Patch
+                self.backup.create_backup(target_file)
+                
                 # Apply fix
                 apply_patch(target_file, parsed.fixed_code)
 
                 # Run code
                 result = run_code(entry_point, sandbox_path)
-
                 trace.add("execution_result", result) ## debug trace
 
                 status = validate_fix(current_error, result)
 
                 new_error = result.get("stderr", "") or result.get("error", "")
 
+                # rollback if worse
+                if status == "failed":
+                    self.backup.restore(target_file)
+
                 previous_attempts.append({
-                    "iteration": iteration,
-                    "reason": parsed.reason,
+                    "hash": fix_hash,
                     "status": status,
-                    "fixed_code": parsed.fixed_code, ## smart retry
                 })
 
                 self.logger.log(
@@ -180,33 +178,28 @@ class ReactAgent:
                     status=status
                 )
 
-                seen_errors.append(new_error)
+                ## Early Stopping
+                err_hash = hashlib.md5(new_error.encode()).hexdigest()
 
-                relative_path = self.get_relative_path(target_file, sandbox_path)
+                seen_error_hashes[err_hash]= seen_error_hashes.get(err_hash, 0) + 1
 
-                # condidence calculation
-                confidence = self.scorer.score(initial_error, result, iteration + 1)
-
+                if seen_error_hashes[err_hash] >= 2:
+                    return {"error": "Repeated error"}
+                
+                if new_error == current_error:
+                    return {"error": "No Improvement"}
+                
+                ## Success
                 # Success
                 if status == "success":
                     self.metrics.mark_success()
+                    confidence = self.scorer.score(initial_error, result, iteration + 1)
 
                     return {
                         "root_cause": parsed.reason,
-                        "file_to_change": relative_path,
                         "file_name": os.path.basename(target_file),
-                        "fixed_code": parsed.fixed_code,
-                        "confidence": confidence,
-                        "debug_trace": trace.get() ## debug trace
+                        "confidence": confidence
                     }
-                
-                # Early stop: repeated error
-                if seen_errors.count(new_error) >= 2:
-                    return {"error": "Repeated error, stopping early"}
-                
-                # Early stop: no improvement
-                if new_error == current_error:
-                    return {"error": "No improvement, stopping"}
                 
                 current_error = new_error
 

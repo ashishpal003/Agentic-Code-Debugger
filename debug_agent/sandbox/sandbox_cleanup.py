@@ -3,7 +3,7 @@ import shutil
 import time
 
 def cleanup_old_sandboxes(tmp_dir="/private/var/folders/n8/j0_rrlzd54b4xk3yllh67k000000gn/T", prefix="debug_agent_", max_age_hours=6):
-    now = time.time
+    now = time.time()
 
     for folder in os.listdir(tmp_dir):
         if folder.startswith(prefix):
